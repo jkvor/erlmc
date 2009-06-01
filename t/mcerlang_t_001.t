@@ -29,7 +29,8 @@ start() ->
     StartLink = fun() -> case mcerlang:start_link([{"127.0.0.1", 11211, 1}]) of {ok, _} -> true; _ -> false end end,
     etap:ok(StartLink(), "start mcerlang"),
 
-    io:format("set ~p~n", [mcerlang:set("Hello", "World")]),
-    io:format("get ~p~n", [mcerlang:get("Hello")]),
+    etap:is(mcerlang:set("Hello", "World"), <<>>, "set ok"),
+    etap:is(mcerlang:add("Hello", "Fail"), <<"Data exists for key.">>, "add ok"),
+    etap:is(mcerlang:get("Hello"), <<"World">>, "get ok"),
     
     ok.

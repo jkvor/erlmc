@@ -179,7 +179,6 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%--------------------------------------------------------------------
 send_recv(Socket, Request) ->
     Bin = encode_request(Request),
-    io:format("bin ~p~n", [Bin]),
     ok = gen_tcp:send(Socket, Bin),
     Resp1 = recv_header(Socket),
     Resp2 = recv_body(Socket, Resp1),
