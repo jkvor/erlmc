@@ -26,22 +26,6 @@ start() ->
     etap:is(mcerlang:find_next_largest(14, [{1,a}, {2,b}, {5,c}, {7,d}, {14,e}]), a, "find next largest"),
     etap:is(mcerlang:find_next_largest(15, [{1,a}, {2,b}, {5,c}, {7,d}, {14,e}]), a, "find next largest"),
     
-    StartLink = fun() -> case mcerlang:start_link([{"127.0.0.1", 11211, 1}]) of {ok, _} -> true; _ -> false end end,
-    etap:ok(StartLink(), "start mcerlang"),
-
-    etap:is(mcerlang:set("Hello", "World"), <<>>, "set ok"),
-    etap:is(mcerlang:add("Hello", "Fail"), <<"Data exists for key.">>, "add ok"),
-    etap:is(mcerlang:get("Hello"), <<"World">>, "get ok"),
-    etap:is(mcerlang:delete("Hello"), <<>>, "delete ok"),
-    etap:is(mcerlang:add("Hello", "World2"), <<>>, "add ok"),
-    etap:is(mcerlang:get("Hello"), <<"World2">>, "get ok"),
+    gen_tcp:send(Socket, <<128,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>>),
     
-    mcerlang:set("One", "A"),
-    mcerlang:set("Two", "B"),
-    mcerlang:set("Three", "C"),
-    
-    etap:is(mcerlang:get_many(["One", "Two", "Two-and-a-half", "Three"]), [{"One",<<"A">>},{"Two",<<"B">>},{"Two-and-a-half",<<>>},{"Three",<<"C">>}], "get_many ok"),
-    
-	etap:is(mcerlang:quit(), [{{"127.0.0.1",11211},<<>>}], "quit ok"),
-	
     ok.

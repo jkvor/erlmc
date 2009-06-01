@@ -27,7 +27,6 @@
 %% @doc a binary protocol memcached client
 -module(mcerlang).
 -behaviour(gen_server).
--compile(export_all).
 
 %% gen_server callbacks
 -export([start_link/1, init/1, handle_call/3, handle_cast/2, 
@@ -36,7 +35,9 @@
 %% api callbacks
 -export([get/1, get_many/1, add/2, add/3, set/2, set/3, 
 		 replace/2, replace/3, delete/1, increment/4, decrement/4,
-		 stat/0, quit/0]).
+		 append/2, prepend/2, stat/0, flush/1, quit/0, version/0]).
+
+-export([find_next_largest/2]).
 
 -include("mcerlang.hrl").
 
@@ -61,35 +62,47 @@ get_many(Keys) ->
 add(Key, Value) ->
 	add(Key, Value, 0).
 	
-add(Key, Value, Expiration) when is_integer(Expiration) ->
+add(Key, Value, Expiration) when is_binary(Value), is_integer(Expiration) ->
     gen_server:call(?MODULE, {add, Key, Value, Expiration}).
 
 set(Key, Value) ->
 	set(Key, Value, 0).
 	
-set(Key, Value, Expiration) when is_integer(Expiration) ->
+set(Key, Value, Expiration) when is_binary(Value), is_integer(Expiration) ->
     gen_server:call(?MODULE, {set, Key, Value, Expiration}).
     
 replace(Key, Value) ->
 	replace(Key, Value, 0).
 	
-replace(Key, Value, Expiration) when is_integer(Expiration) ->
+replace(Key, Value, Expiration) when is_binary(Value), is_integer(Expiration) ->
     gen_server:call(?MODULE, {replace, Key, Value, Expiration}).
     
 delete(Key) ->
     gen_server:call(?MODULE, {delete, Key}).
 
-increment(Key, Value, Initial, Expiration) when is_integer(Expiration) ->
+increment(Key, Value, Initial, Expiration) when is_binary(Value), is_binary(Initial), is_integer(Expiration) ->
     gen_server:call(?MODULE, {increment, Key, Value, Initial, Expiration}).
 
-decrement(Key, Value, Initial, Expiration) when is_integer(Expiration) ->
+decrement(Key, Value, Initial, Expiration) when is_binary(Value), is_binary(Initial), is_integer(Expiration) ->
     gen_server:call(?MODULE, {decrement, Key, Value, Initial, Expiration}).
+
+append(Key, Value) when is_binary(Value) ->
+    gen_server:call(?MODULE, {append, Key, Value}).
+
+prepend(Key, Value) when is_binary(Value) ->
+    gen_server:call(?MODULE, {prepend, Key, Value}).
 
 stat() ->
     gen_server:call(?MODULE, stat).
 
+flush(Expiration) when is_integer(Expiration) ->
+    gen_server:call(?MODULE, {flush, Expiration}).
+    
 quit() ->
     gen_server:call(?MODULE, quit).
+    
+version() ->
+    gen_server:call(?MODULE, version).
 
 %%====================================================================
 %% gen_server callbacks
@@ -168,19 +181,19 @@ handle_call({get_many, Keys}, _From, State) ->
 handle_call({add, Key0, Value, Expiration}, _From, State) ->
     Key = package_key(Key0),
     Socket = map_key(State, Key),
-    Resp = send_recv(Socket, #request{op_code=?OP_Add, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    Resp = send_recv(Socket, #request{op_code=?OP_Add, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=Value}),
     {reply, Resp#response.value, State};
     
 handle_call({set, Key0, Value, Expiration}, _From, State) ->
     Key = package_key(Key0),
     Socket = map_key(State, Key),
-    Resp = send_recv(Socket, #request{op_code=?OP_Set, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    Resp = send_recv(Socket, #request{op_code=?OP_Set, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=Value}),
     {reply, Resp#response.value, State};
 
 handle_call({replace, Key0, Value, Expiration}, _From, State) ->
     Key = package_key(Key0),
     Socket = map_key(State, Key),
-    Resp = send_recv(Socket, #request{op_code=?OP_Replace, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    Resp = send_recv(Socket, #request{op_code=?OP_Replace, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=Value}),
     {reply, Resp#response.value, State};
 
 handle_call({delete, Key0}, _From, State) ->
@@ -201,22 +214,32 @@ handle_call({decrement, Key0, Value, Initial, Expiration}, _From, State) ->
 	Resp = send_recv(Socket, #request{op_code=?OP_Decrement, extras = <<Value:64, Initial:64, Expiration:32>>, key=list_to_binary(Key)}),
 	{reply, Resp, State};
 
+handle_call({append, Key0, Value}, _From, State) ->
+	Key = package_key(Key0),
+    Socket = map_key(State, Key),
+	Resp = send_recv(Socket, #request{op_code=?OP_Append, key=list_to_binary(Key), value=Value}),
+	{reply, Resp#response.value, State};
+
+handle_call({prepend, Key0, Value}, _From, State) ->
+	Key = package_key(Key0),
+    Socket = map_key(State, Key),
+	Resp = send_recv(Socket, #request{op_code=?OP_Prepend, key=list_to_binary(Key), value=Value}),
+	{reply, Resp#response.value, State};
+	
 handle_call(stat, _From, State) ->
-    Reply = [begin
-                {{Host, Port}, begin
-                    Resp = send_recv(Socket, #request{op_code=?OP_Stat}),
-                    Resp#response.value
-                end}
-             end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
+    Reply = send_all(State, #request{op_code=?OP_Stat}),
     {reply, Reply, State};
 
+handle_call({flush, Expiration}, _From, State) ->
+    Reply = send_all(State, #request{op_code=?OP_Flush, extras = <<Expiration:32>>}),
+    {reply, Reply, State};
+    
 handle_call(quit, _From, State) ->
-    Reply = [begin
-                {{Host, Port}, begin
-                    Resp = send_recv(Socket, #request{op_code=?OP_Quit}),
-                    Resp#response.value
-                end}
-             end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
+    Reply = send_all(State, #request{op_code=?OP_Quit}),
+    {reply, Reply, State};
+    
+handle_call(version, _From, State) ->
+    Reply = send_all(State, #request{op_code=?OP_Version}),
     {reply, Reply, State};
 			
 handle_call(_, _From, State) -> {reply, {error, invalid_call}, State}.
@@ -259,6 +282,14 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+send_all(State, Request) ->
+    [begin
+        {{Host, Port}, begin
+            Resp = send_recv(Socket, Request),
+            Resp#response.value
+        end}
+     end || {{Host, Port}, [Socket|_]} <- State#state.sockets].
+             
 send_recv(Socket, Request) ->
     ok = send(Socket, Request),
     recv(Socket).
