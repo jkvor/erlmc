@@ -32,5 +32,14 @@ start() ->
     etap:is(mcerlang:set("Hello", "World"), <<>>, "set ok"),
     etap:is(mcerlang:add("Hello", "Fail"), <<"Data exists for key.">>, "add ok"),
     etap:is(mcerlang:get("Hello"), <<"World">>, "get ok"),
+    etap:is(mcerlang:delete("Hello"), <<>>, "delete ok"),
+    etap:is(mcerlang:add("Hello", "World2"), <<>>, "add ok"),
+    etap:is(mcerlang:get("Hello"), <<"World2">>, "get ok"),
+    
+    mcerlang:set("One", "A"),
+    mcerlang:set("Two", "B"),
+    mcerlang:set("Three", "C"),
+    
+    etap:is(mcerlang:get_many(["One", "Two", "Two-and-a-half", "Three"]), [{"One",<<"A">>},{"Two",<<"B">>},{"Two-and-a-half",<<>>},{"Three",<<"C">>}], "get_many ok"),
     
     ok.

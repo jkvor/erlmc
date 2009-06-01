@@ -34,7 +34,7 @@
          handle_info/2, terminate/2, code_change/3]).
 
 %% api callbacks
--export([stat/0, get/1, add/2, set/2, replace/2]).
+-export([stat/0, get/1, get_many/1, add/2, set/2, replace/2, delete/1]).
 
 -include("mcerlang.hrl").
 
@@ -55,6 +55,9 @@ stat() ->
     
 get(Key) ->
     gen_server:call(?MODULE, {get, Key}).
+
+get_many(Keys) ->
+    gen_server:call(?MODULE, {get_many, Keys}).
     
 add(Key, Value) ->
     gen_server:call(?MODULE, {add, Key, Value}).
@@ -64,6 +67,9 @@ set(Key, Value) ->
     
 replace(Key, Value) ->
     gen_server:call(?MODULE, {replace, Key, Value}).
+    
+delete(Key) ->
+    gen_server:call(?MODULE, {delete, Key}).
     
 %%====================================================================
 %% gen_server callbacks
@@ -117,26 +123,61 @@ handle_call(stat, _From, State) ->
              end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
     {reply, Reply, State};
     
-handle_call({get, Key}, _From, State) ->
+handle_call({get, Key0}, _From, State) ->
+    Key = package_key(Key0),
     Socket = map_key(State, Key),
-    Resp = send_recv(Socket, #request{op_code=?OP_Get, key=list_to_binary(Key)}),
-    {reply, Resp#response.value, State};
+    #response{key=Key1, value=Value} = send_recv(Socket, #request{op_code=?OP_GetK, key=list_to_binary(Key)}),
+    case binary_to_list(Key1) of
+        Key -> {reply, Value, State};
+        _ -> {reply, <<>>, State}
+    end;
+
+handle_call({get_many, Keys}, _From, State) ->
+    SocketDicts = lists:foldl(
+        fun(Key, Dict) ->
+            Socket = map_key(State, Key),
+            send(Socket, #request{op_code=?OP_GetKQ, key=list_to_binary(Key)}),
+            case dict:find(Socket, Dict) of
+                {ok, Count} -> dict:store(Socket, Count+1, Dict);
+                error -> dict:store(Socket, 1, Dict)
+            end
+        end, dict:new(), Keys),
+    Resps = lists:flatten([begin
+        send(Socket, #request{op_code=?OP_Noop}),
+        [recv(Socket) || _ <- lists:seq(1,Count)]
+     end || {Socket, Count} <- dict:to_list(SocketDicts)]),
+    Reply = [begin
+        case lists:keysearch(list_to_binary(Key), 8, Resps) of
+            {value, Resp} -> {Key, Resp#response.value};
+            false -> {Key, <<>>}
+        end
+     end || Key <- Keys],
+    {reply, Reply, State};
     
-handle_call({add, Key, Value}, _From, State) ->
+handle_call({add, Key0, Value}, _From, State) ->
+    Key = package_key(Key0),
     Socket = map_key(State, Key),
     Resp = send_recv(Socket, #request{op_code=?OP_Add, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
     {reply, Resp#response.value, State};
     
-handle_call({set, Key, Value}, _From, State) ->
+handle_call({set, Key0, Value}, _From, State) ->
+    Key = package_key(Key0),
     Socket = map_key(State, Key),
     Resp = send_recv(Socket, #request{op_code=?OP_Set, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
     {reply, Resp#response.value, State};
 
-handle_call({replace, Key, Value}, _From, State) ->
+handle_call({replace, Key0, Value}, _From, State) ->
+    Key = package_key(Key0),
     Socket = map_key(State, Key),
     Resp = send_recv(Socket, #request{op_code=?OP_Replace, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
     {reply, Resp#response.value, State};
 
+handle_call({delete, Key0}, _From, State) ->
+    Key = package_key(Key0),
+    Socket = map_key(State, Key),
+    Resp = send_recv(Socket, #request{op_code=?OP_Delete, key=list_to_binary(Key)}),
+    {reply, Resp#response.value, State};
+        
 handle_call(_, _From, State) -> {reply, {error, invalid_call}, State}.
 
 %%--------------------------------------------------------------------
@@ -178,12 +219,18 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%% Internal functions
 %%--------------------------------------------------------------------
 send_recv(Socket, Request) ->
+    ok = send(Socket, Request),
+    recv(Socket).
+    
+send(Socket, Request) ->
     Bin = encode_request(Request),
-    ok = gen_tcp:send(Socket, Bin),
+    gen_tcp:send(Socket, Bin).
+
+recv(Socket) ->
     Resp1 = recv_header(Socket),
     Resp2 = recv_body(Socket, Resp1),
     Resp2.
-       
+        
 encode_request(Request) when is_record(Request, request) ->
     Magic = 16#80,
     Opcode = Request#request.op_code,
@@ -228,6 +275,18 @@ recv_bytes(_, 0) -> <<>>;
 recv_bytes(Socket, NumBytes) ->
     {ok, Bin} = gen_tcp:recv(Socket, NumBytes), Bin.
 
+package_key(Key) when is_atom(Key) ->
+    atom_to_list(Key);
+    
+package_key(Key) when is_list(Key) ->
+    Key;
+    
+package_key(Key) when is_binary(Key) ->
+    binary_to_list(Key);
+    
+package_key(Key) ->
+    lists:flatten(io_lib:format("~p", [Key])).
+    
 %% Consistent hashing functions
 %%
 %% First, hash memcached servers to unsigned integers on a continuum. To
@@ -238,16 +297,10 @@ recv_bytes(Socket, NumBytes) ->
 hash_to_uint(Host, Port) when is_list(Host), is_integer(Port) ->
     hash_to_uint(Host ++ integer_to_list(Port)).
 
-hash_to_uint(Key) when is_atom(Key) -> 
-    hash_to_uint(atom_to_list(Key));
-
 hash_to_uint(Key) when is_list(Key) -> 
-    <<Int:128/unsigned-integer>> = erlang:md5("asdf"), Int;
-    
-hash_to_uint(Key) ->
-    hash_to_uint(lists:flatten(io_lib:format("~p", [Key]))).
+    <<Int:128/unsigned-integer>> = erlang:md5(Key), Int.
 
-map_key(#state{continuum=Continuum, sockets=Sockets}, Key) ->
+map_key(#state{continuum=Continuum, sockets=Sockets}, Key) when is_list(Key) ->
     {Host, Port} = find_next_largest(hash_to_uint(Key), Continuum),
     Pool = proplists:get_value({Host, Port}, Sockets),
     lists:nth(random:uniform(length(Pool)), Pool).
