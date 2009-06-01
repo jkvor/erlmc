@@ -23,6 +23,7 @@
 %% FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 %% OTHER DEALINGS IN THE SOFTWARE.
 %%
+%% http://code.google.com/p/memcached/wiki/MemcacheBinaryProtocol
 %% @doc a binary protocol memcached client
 -module(mcerlang).
 -behaviour(gen_server).
@@ -33,11 +34,11 @@
          handle_info/2, terminate/2, code_change/3]).
 
 %% api callbacks
--export([stat/0, get/1, add/2, set/2]).
+-export([stat/0, get/1, add/2, set/2, replace/2]).
 
 -include("mcerlang.hrl").
 
--define(TIMEOUT, 1000).
+-define(TIMEOUT, 3000).
 
 -record(state, {continuum, sockets}).
 
@@ -55,12 +56,14 @@ stat() ->
 get(Key) ->
     gen_server:call(?MODULE, {get, Key}).
     
-set(Key, Value) ->
-    gen_server:call(?MODULE, {set, Key, Value}).
-
 add(Key, Value) ->
     gen_server:call(?MODULE, {add, Key, Value}).
+
+set(Key, Value) ->
+    gen_server:call(?MODULE, {set, Key, Value}).
     
+replace(Key, Value) ->
+    gen_server:call(?MODULE, {replace, Key, Value}).    
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -106,26 +109,29 @@ init(CacheServers) ->
 %%--------------------------------------------------------------------
 handle_call(stat, _From, State) ->
     Reply = [begin
-        Bin = request_body(#request{op_code=?OP_Stat}),
-        {{Host, Port}, send_recv(Socket, Bin)}
-    end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
+                {{Host, Port}, send_recv(Socket, #request{op_code=?OP_Stat})}
+             end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
     {reply, Reply, State};
     
 handle_call({get, Key}, _From, State) ->
     Socket = map_key(State, Key),
-    Bin = request_body(#request{op_code=?OP_Get, key=list_to_binary(Key)}),
-    Reply = send_recv(Socket, Bin),
+    Reply = send_recv(Socket, #request{op_code=?OP_Get, key=list_to_binary(Key)}),
     {reply, Reply, State};
     
 handle_call({add, Key, Value}, _From, State) ->
     Socket = map_key(State, Key),
-    Bin = request_body(#request{op_code=?OP_Add, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
-    Reply = send_recv(Socket, Bin),
+    Reply = send_recv(Socket, #request{op_code=?OP_Add, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
     {reply, Reply, State};
     
-handle_call({set, Key, _Value}, _From, State) ->
-    _Socket = map_key(State, Key),
-    {reply, ok, State};
+handle_call({set, Key, Value}, _From, State) ->
+    Socket = map_key(State, Key),
+    Reply = send_recv(Socket, #request{op_code=?OP_Set, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    {reply, Reply, State};
+
+handle_call({replace, Key, Value}, _From, State) ->
+    Socket = map_key(State, Key),
+    Reply = send_recv(Socket, #request{op_code=?OP_Replace, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    {reply, Reply, State};
 
 handle_call(_, _From, State) -> {reply, {error, invalid_call}, State}.
 
@@ -167,36 +173,58 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-
-request_body(Request) when is_record(Request, request) ->
-    Magic = ?Req_Magic,
+send_recv(Socket, Request) ->
+    Bin = encode_request(Request),
+    io:format("bin ~p~n", [Bin]),
+    ok = gen_tcp:send(Socket, Bin),
+    Resp1 = recv_header(Socket),
+    Resp2 = recv_body(Socket, Resp1),
+    Resp2.
+       
+encode_request(Request) when is_record(Request, request) ->
+    Magic = 16#80,
     Opcode = Request#request.op_code,
     KeySize = size(Request#request.key),
     Extras = Request#request.extras,
     ExtrasSize = size(Extras),
     DataType = Request#request.data_type,
     Reserved = Request#request.reserved,
-    Body = <<(Request#request.key)/binary, (Request#request.value)/binary>>,
+    Body = <<Extras:ExtrasSize/binary, (Request#request.key)/binary, (Request#request.value)/binary>>,
     BodySize = size(Body),
     Opaque = Request#request.opaque,
     CAS = Request#request.cas,
-    <<Magic:8, Opcode:8, KeySize:16, ExtrasSize:8, DataType:8, Reserved:16, BodySize:32, Opaque:32, CAS:64, Extras:ExtrasSize/binary, Body:BodySize/binary>>.
+    <<Magic:8, Opcode:8, KeySize:16, ExtrasSize:8, DataType:8, Reserved:16, BodySize:32, Opaque:32, CAS:64, Body:BodySize/binary>>.
 
-send_recv(Socket, Bin) ->
-    ok = gen_tcp:send(Socket, Bin),
-    {ok, Reply} = do_recv(Socket, []),
-    Reply.
+recv_header(Socket) ->
+    decode_response_header(recv_bytes(Socket, 24)).
+  
+recv_body(Socket, #response{key_size = KeySize, extras_size = ExtrasSize, body_size = BodySize}=Resp) ->
+    decode_response_body(recv_bytes(Socket, BodySize), ExtrasSize, KeySize, Resp).
     
-do_recv(Socket, Bins) ->
-    case gen_tcp:recv(Socket, 0, ?TIMEOUT) of
-        {ok, Bin} ->
-            do_recv(Socket, [Bins, Bin]);
-        {error, closed} ->
-            {ok, list_to_binary(Bins)};
-        {error, timeout} ->
-            {ok, list_to_binary(Bins)}
-    end.
+decode_response_header(<<16#81:8, Opcode:8, KeySize:16, ExtrasSize:8, DataType:8, Status:16, BodySize:32, Opaque:32, CAS:64>>) ->
+    #response{
+        op_code = Opcode, 
+        data_type = DataType, 
+        status = Status, 
+        opaque = Opaque, 
+        cas = CAS, 
+        key_size = KeySize,
+        extras_size = ExtrasSize,
+        body_size = BodySize
+    }.
     
+decode_response_body(Bin, ExtrasSize, KeySize, Resp) ->
+    <<Extras:ExtrasSize/binary, Key:KeySize/binary, Value/binary>> = Bin,
+    Resp#response{
+        extras = Extras,
+        key = Key,
+        value = Value
+    }.
+
+recv_bytes(_, 0) -> <<>>;
+recv_bytes(Socket, NumBytes) ->
+    {ok, Bin} = gen_tcp:recv(Socket, NumBytes), Bin.
+
 %% Consistent hashing functions
 %%
 %% First, hash memcached servers to unsigned integers on a continuum. To

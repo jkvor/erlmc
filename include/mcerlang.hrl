@@ -1,6 +1,3 @@
--define(Req_Magic, 16#80).
--define(Res_Magic, 16#81).
-
 %% Op codes
 -define(OP_Get,       16#00).
 -define(OP_Set,       16#01).
@@ -21,3 +18,4 @@
 -define(OP_Stat,      16#10).
 
 -record(request, {op_code, data_type=16#00, reserved=16#00, opaque=16#00, cas=16#00, extras = <<>>, key = <<>>, value = <<>>}).
+-record(response, {op_code, data_type, status, opaque, cas, extras, key, value, key_size, extras_size, body_size}).
