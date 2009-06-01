@@ -1,4 +1,4 @@
-# README
+# MC Erlang caches beats on your face
 
 Erlang binary protocol memcached client
 
