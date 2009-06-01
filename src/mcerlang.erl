@@ -63,7 +63,8 @@ set(Key, Value) ->
     gen_server:call(?MODULE, {set, Key, Value}).
     
 replace(Key, Value) ->
-    gen_server:call(?MODULE, {replace, Key, Value}).    
+    gen_server:call(?MODULE, {replace, Key, Value}).
+    
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -109,29 +110,32 @@ init(CacheServers) ->
 %%--------------------------------------------------------------------
 handle_call(stat, _From, State) ->
     Reply = [begin
-                {{Host, Port}, send_recv(Socket, #request{op_code=?OP_Stat})}
+                {{Host, Port}, begin
+                    Resp = send_recv(Socket, #request{op_code=?OP_Stat}),
+                    Resp#response.value
+                end}
              end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
     {reply, Reply, State};
     
 handle_call({get, Key}, _From, State) ->
     Socket = map_key(State, Key),
-    Reply = send_recv(Socket, #request{op_code=?OP_Get, key=list_to_binary(Key)}),
-    {reply, Reply, State};
+    Resp = send_recv(Socket, #request{op_code=?OP_Get, key=list_to_binary(Key)}),
+    {reply, Resp#response.value, State};
     
 handle_call({add, Key, Value}, _From, State) ->
     Socket = map_key(State, Key),
-    Reply = send_recv(Socket, #request{op_code=?OP_Add, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
-    {reply, Reply, State};
+    Resp = send_recv(Socket, #request{op_code=?OP_Add, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    {reply, Resp#response.value, State};
     
 handle_call({set, Key, Value}, _From, State) ->
     Socket = map_key(State, Key),
-    Reply = send_recv(Socket, #request{op_code=?OP_Set, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
-    {reply, Reply, State};
+    Resp = send_recv(Socket, #request{op_code=?OP_Set, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    {reply, Resp#response.value, State};
 
 handle_call({replace, Key, Value}, _From, State) ->
     Socket = map_key(State, Key),
-    Reply = send_recv(Socket, #request{op_code=?OP_Replace, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
-    {reply, Reply, State};
+    Resp = send_recv(Socket, #request{op_code=?OP_Replace, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    {reply, Resp#response.value, State};
 
 handle_call(_, _From, State) -> {reply, {error, invalid_call}, State}.
 
