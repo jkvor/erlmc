@@ -34,7 +34,9 @@
          handle_info/2, terminate/2, code_change/3]).
 
 %% api callbacks
--export([stat/0, get/1, get_many/1, add/2, set/2, replace/2, delete/1]).
+-export([get/1, get_many/1, add/2, add/3, set/2, set/3, 
+		 replace/2, replace/3, delete/1, increment/4, decrement/4,
+		 stat/0, quit/0]).
 
 -include("mcerlang.hrl").
 
@@ -49,9 +51,6 @@
 %%       ConnectionPoolSize = integer()
 start_link(CacheServers) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, CacheServers, []).
-
-stat() ->
-    gen_server:call(?MODULE, stat).
     
 get(Key) ->
     gen_server:call(?MODULE, {get, Key}).
@@ -60,17 +59,38 @@ get_many(Keys) ->
     gen_server:call(?MODULE, {get_many, Keys}).
     
 add(Key, Value) ->
-    gen_server:call(?MODULE, {add, Key, Value}).
+	add(Key, Value, 0).
+	
+add(Key, Value, Expiration) when is_integer(Expiration) ->
+    gen_server:call(?MODULE, {add, Key, Value, Expiration}).
 
 set(Key, Value) ->
-    gen_server:call(?MODULE, {set, Key, Value}).
+	set(Key, Value, 0).
+	
+set(Key, Value, Expiration) when is_integer(Expiration) ->
+    gen_server:call(?MODULE, {set, Key, Value, Expiration}).
     
 replace(Key, Value) ->
-    gen_server:call(?MODULE, {replace, Key, Value}).
+	replace(Key, Value, 0).
+	
+replace(Key, Value, Expiration) when is_integer(Expiration) ->
+    gen_server:call(?MODULE, {replace, Key, Value, Expiration}).
     
 delete(Key) ->
     gen_server:call(?MODULE, {delete, Key}).
-    
+
+increment(Key, Value, Initial, Expiration) when is_integer(Expiration) ->
+    gen_server:call(?MODULE, {increment, Key, Value, Initial, Expiration}).
+
+decrement(Key, Value, Initial, Expiration) when is_integer(Expiration) ->
+    gen_server:call(?MODULE, {decrement, Key, Value, Initial, Expiration}).
+
+stat() ->
+    gen_server:call(?MODULE, stat).
+
+quit() ->
+    gen_server:call(?MODULE, quit).
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -113,16 +133,7 @@ init(CacheServers) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %% @hidden
-%%--------------------------------------------------------------------
-handle_call(stat, _From, State) ->
-    Reply = [begin
-                {{Host, Port}, begin
-                    Resp = send_recv(Socket, #request{op_code=?OP_Stat}),
-                    Resp#response.value
-                end}
-             end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
-    {reply, Reply, State};
-    
+%%--------------------------------------------------------------------    
 handle_call({get, Key0}, _From, State) ->
     Key = package_key(Key0),
     Socket = map_key(State, Key),
@@ -154,22 +165,22 @@ handle_call({get_many, Keys}, _From, State) ->
      end || Key <- Keys],
     {reply, Reply, State};
     
-handle_call({add, Key0, Value}, _From, State) ->
+handle_call({add, Key0, Value, Expiration}, _From, State) ->
     Key = package_key(Key0),
     Socket = map_key(State, Key),
-    Resp = send_recv(Socket, #request{op_code=?OP_Add, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    Resp = send_recv(Socket, #request{op_code=?OP_Add, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
     {reply, Resp#response.value, State};
     
-handle_call({set, Key0, Value}, _From, State) ->
+handle_call({set, Key0, Value, Expiration}, _From, State) ->
     Key = package_key(Key0),
     Socket = map_key(State, Key),
-    Resp = send_recv(Socket, #request{op_code=?OP_Set, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    Resp = send_recv(Socket, #request{op_code=?OP_Set, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
     {reply, Resp#response.value, State};
 
-handle_call({replace, Key0, Value}, _From, State) ->
+handle_call({replace, Key0, Value, Expiration}, _From, State) ->
     Key = package_key(Key0),
     Socket = map_key(State, Key),
-    Resp = send_recv(Socket, #request{op_code=?OP_Replace, extras = <<16#deadbeef:32, 16#00000e10:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
+    Resp = send_recv(Socket, #request{op_code=?OP_Replace, extras = <<16#deadbeef:32, Expiration:32>>, key=list_to_binary(Key), value=list_to_binary(Value)}),
     {reply, Resp#response.value, State};
 
 handle_call({delete, Key0}, _From, State) ->
@@ -177,7 +188,37 @@ handle_call({delete, Key0}, _From, State) ->
     Socket = map_key(State, Key),
     Resp = send_recv(Socket, #request{op_code=?OP_Delete, key=list_to_binary(Key)}),
     {reply, Resp#response.value, State};
-        
+
+handle_call({increment, Key0, Value, Initial, Expiration}, _From, State) ->
+	Key = package_key(Key0),
+    Socket = map_key(State, Key),
+	Resp = send_recv(Socket, #request{op_code=?OP_Increment, extras = <<Value:64, Initial:64, Expiration:32>>, key=list_to_binary(Key)}),
+	{reply, Resp, State};
+	
+handle_call({decrement, Key0, Value, Initial, Expiration}, _From, State) ->
+	Key = package_key(Key0),
+    Socket = map_key(State, Key),
+	Resp = send_recv(Socket, #request{op_code=?OP_Decrement, extras = <<Value:64, Initial:64, Expiration:32>>, key=list_to_binary(Key)}),
+	{reply, Resp, State};
+
+handle_call(stat, _From, State) ->
+    Reply = [begin
+                {{Host, Port}, begin
+                    Resp = send_recv(Socket, #request{op_code=?OP_Stat}),
+                    Resp#response.value
+                end}
+             end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
+    {reply, Reply, State};
+
+handle_call(quit, _From, State) ->
+    Reply = [begin
+                {{Host, Port}, begin
+                    Resp = send_recv(Socket, #request{op_code=?OP_Quit}),
+                    Resp#response.value
+                end}
+             end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
+    {reply, Reply, State};
+			
 handle_call(_, _From, State) -> {reply, {error, invalid_call}, State}.
 
 %%--------------------------------------------------------------------

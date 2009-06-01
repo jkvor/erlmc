@@ -42,4 +42,6 @@ start() ->
     
     etap:is(mcerlang:get_many(["One", "Two", "Two-and-a-half", "Three"]), [{"One",<<"A">>},{"Two",<<"B">>},{"Two-and-a-half",<<>>},{"Three",<<"C">>}], "get_many ok"),
     
+	etap:is(mcerlang:quit(), [{{"127.0.0.1",11211},<<>>}], "quit ok"),
+	
     ok.
