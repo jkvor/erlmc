@@ -14,7 +14,7 @@ Binary Protocol Spec <http://code.google.com/p/memcached/wiki/MemcacheBinaryProt
 
 ## Quick Start
 
-** **You must have the binary protocol branch of memcached running as mentioned above**
+**You must have the binary protocol branch of memcached running as mentioned above**
 
 $> make
 
