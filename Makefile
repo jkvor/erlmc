@@ -14,7 +14,7 @@ clean:
 	rm -rf erl_crash.dump *.beam *.hrl
 
 package: clean
-	@mkdir $(PKGNAME)-$(VERSION)/ && cp -rf ebin Makefile README.markdown src support t $(PKGNAME)-$(VERSION)
+	@mkdir $(PKGNAME)-$(VERSION)/ && cp -rf ebin include Makefile README.markdown src support t $(PKGNAME)-$(VERSION)
 	@COPYFILE_DISABLE=true tar zcf $(PKGNAME)-$(VERSION).tgz $(PKGNAME)-$(VERSION)
 	@rm -rf $(PKGNAME)-$(VERSION)/
 
