@@ -35,7 +35,7 @@
 %% api callbacks
 -export([get/1, get_many/1, add/2, add/3, set/2, set/3, 
 		 replace/2, replace/3, delete/1, increment/4, decrement/4,
-		 append/2, prepend/2, stat/0, flush/1, quit/0, version/0]).
+		 append/2, prepend/2, stats/0, flush/1, quit/0, version/0]).
 
 -export([find_next_largest/2]).
 
@@ -92,8 +92,8 @@ append(Key, Value) when is_binary(Value) ->
 prepend(Key, Value) when is_binary(Value) ->
     gen_server:call(?MODULE, {prepend, Key, Value}).
 
-stat() ->
-    gen_server:call(?MODULE, stat).
+stats() ->
+    gen_server:call(?MODULE, stats).
 
 flush(Expiration) when is_integer(Expiration) ->
     gen_server:call(?MODULE, {flush, Expiration}).
@@ -226,8 +226,16 @@ handle_call({prepend, Key0, Value}, _From, State) ->
 	Resp = send_recv(Socket, #request{op_code=?OP_Prepend, key=list_to_binary(Key), value=Value}),
 	{reply, Resp#response.value, State};
 	
-handle_call(stat, _From, State) ->
-    Reply = send_all(State, #request{op_code=?OP_Stat}),
+handle_call(stats, _From, State) ->
+    Sockets = [begin
+        {{Host, Port}, begin
+            send(Socket, #request{op_code=?OP_Stat}),
+            Socket
+        end}
+     end || {{Host, Port}, [Socket|_]} <- State#state.sockets],
+    Reply = [begin
+        {HostPortKey, collect_stats_from_socket(Socket)}
+    end || {HostPortKey, Socket} <- Sockets],
     {reply, Reply, State};
 
 handle_call({flush, Expiration}, _From, State) ->
@@ -289,7 +297,18 @@ send_all(State, Request) ->
             Resp#response.value
         end}
      end || {{Host, Port}, [Socket|_]} <- State#state.sockets].
-             
+     
+collect_stats_from_socket(Socket) ->
+    collect_stats_from_socket(Socket, []).
+    
+collect_stats_from_socket(Socket, Acc) ->
+    case recv(Socket) of
+        #response{body_size=0} ->
+            Acc;
+        #response{key=Key, value=Value} ->
+            collect_stats_from_socket(Socket, [{binary_to_atom(Key, utf8), binary_to_list(Value)}|Acc])
+    end.
+
 send_recv(Socket, Request) ->
     ok = send(Socket, Request),
     recv(Socket).

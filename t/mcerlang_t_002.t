@@ -26,10 +26,14 @@ start() ->
     etap:is(mcerlang:get("Hello"), <<"World2!!!">>, "get ok"),
     etap:is(mcerlang:prepend("Hello", <<"$$$">>), <<>>, "prepend ok"),
     etap:is(mcerlang:get("Hello"), <<"$$$World2!!!">>, "get ok"),
+    etap:is(mcerlang:delete("Hello"), <<>>, "delete ok"),
+    etap:is(mcerlang:get("Hello"), <<>>, "get ok"),
     
     mcerlang:set("One", <<"A">>),
     mcerlang:set("Two", <<"B">>),
     mcerlang:set("Three", <<"C">>),
+    
+    io:format("stats ~p~n", [mcerlang:stats()]),
     
     etap:is(mcerlang:get_many(["One", "Two", "Two-and-a-half", "Three"]), [{"One",<<"A">>},{"Two",<<"B">>},{"Two-and-a-half",<<>>},{"Three",<<"C">>}], "get_many ok"),
     
