@@ -35,7 +35,8 @@
 %% api callbacks
 -export([get/1, get_many/1, add/2, add/3, set/2, set/3, 
 		 replace/2, replace/3, delete/1, increment/4, decrement/4,
-		 append/2, prepend/2, stats/0, flush/1, quit/0, version/0]).
+		 append/2, prepend/2, stats/0, flush/1, quit/0, version/0,
+		 continuum/0]).
 
 -export([find_next_largest/2]).
 
@@ -103,6 +104,9 @@ quit() ->
     
 version() ->
     gen_server:call(?MODULE, version).
+
+continuum() ->
+	gen_server:call(?MODULE, continuum).
 
 %%====================================================================
 %% gen_server callbacks
@@ -250,6 +254,9 @@ handle_call(version, _From, State) ->
     Reply = send_all(State, #request{op_code=?OP_Version}),
     {reply, Reply, State};
 			
+handle_call(continuum, _From, State) ->
+	{reply, State#state.continuum, State};
+	
 handle_call(_, _From, State) -> {reply, {error, invalid_call}, State}.
 
 %%--------------------------------------------------------------------

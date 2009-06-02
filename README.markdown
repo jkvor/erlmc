@@ -19,16 +19,24 @@ Binary Protocol Spec <http://code.google.com/p/memcached/wiki/MemcacheBinaryProt
 	$> make
 	$> make test
 	$> sudo make install
+	$> memcached -d -m 1024 -p 11211 -l localhost
+	$> memcached -d -m 1024 -p 11121 -l localhost
 
-	1> mcerlang:start_link([{"localhost", 11211, 1}]).
+	1> mcerlang:start_link([{"localhost", 11211, 1}, {"localhost", 11121, 1}]).
 	{ok,<0.37.0>}
 
 	2> mcerlang:stats().
 	[{{"localhost",11211},
 	  [{evictions,"0"},
-	   {total_items,"30"},
-	   {curr_items,"4"},
-	   {bytes,"257"},
+	   {total_items,"0"},
+	   {curr_items,"0"},
+	   {bytes,"0"},
+	   {...}|...]},
+	 {{"localhost",11121},
+	  [{evictions,"0"},
+	   {total_items,"0"},
+	   {curr_items,"0"},
+	   {bytes,"0"},
 	   {...}|...]}]
 
 	3> mcerlang:set(hello, <<"World">>).
