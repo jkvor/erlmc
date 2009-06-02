@@ -35,7 +35,8 @@
 %% api callbacks
 -export([get/1, get_many/1, add/2, add/3, set/2, set/3, 
 		 replace/2, replace/3, delete/1, increment/4, decrement/4,
-		 append/2, prepend/2, stats/0, flush/1, quit/0, version/0]).
+		 append/2, prepend/2, stats/0, flush/0, flush/1, quit/0, 
+		 version/0]).
 
 -export([find_next_largest/2]).
 
@@ -95,6 +96,9 @@ prepend(Key, Value) when is_binary(Value) ->
 stats() ->
     gen_server:call(?MODULE, stats).
 
+flush() ->
+    gen_server:call(?MODULE, flush).
+    
 flush(Expiration) when is_integer(Expiration) ->
     gen_server:call(?MODULE, {flush, Expiration}).
     
@@ -128,13 +132,25 @@ init(CacheServers) ->
                     dict:store(hash_to_uint(Host, Port), {Host, Port}, Dict1)
                 end, Dict, lists:seq(1,100))
         end, dict:new(), CacheServers))),
+        
     %% Sockets = [{{Host,Port}, [socket()]}]
-    Sockets = [begin
-        {{Host, Port}, [begin
-            %{ok, S} = gen_tcp:connect(Host, Port, [binary, {packet, raw}, {nodelay, true}, {reuseaddr, true}, {active, false}]), S
-            {ok, S} = gen_tcp:connect(Host, Port, [binary, {packet, 0}, {active, false}]), S
-        end || _ <- lists:seq(1, ConnectionPoolSize)]}
-     end || {Host, Port, ConnectionPoolSize} <- CacheServers],
+    Sockets = lists:foldl(
+        fun({Host, Port, ConnPoolSize}, Acc1) ->
+            SList = lists:foldl(
+                fun(_, Acc2) ->
+                    case gen_tcp:connect(Host, Port, [binary, {packet, 0}, {active, false}]) of
+                        {ok, S} -> [S|Acc2];
+                        _ -> Acc2
+                    end
+                end, [], lists:seq(1,ConnPoolSize)),
+            case SList of
+                [] ->
+                    Acc1;
+                _ ->
+                    [{{Host, Port}, SList}|Acc1]
+            end
+        end, [], CacheServers),
+        
     {ok, #state{continuum=Continuum, sockets=Sockets}}.
 
 %%--------------------------------------------------------------------
@@ -238,6 +254,10 @@ handle_call(stats, _From, State) ->
     end || {HostPortKey, Socket} <- Sockets],
     {reply, Reply, State};
 
+handle_call(flush, _From, State) ->
+    Reply = send_all(State, #request{op_code=?OP_Flush}),
+    {reply, Reply, State};
+        
 handle_call({flush, Expiration}, _From, State) ->
     Reply = send_all(State, #request{op_code=?OP_Flush, extras = <<Expiration:32>>}),
     {reply, Reply, State};

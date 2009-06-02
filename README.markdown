@@ -28,6 +28,7 @@ Binary Protocol Spec <http://code.google.com/p/memcached/wiki/MemcacheBinaryProt
 * **append**(Key::any(), Val::binary()) -> Response::binary()
 * **prepend**(Key::any(), Val::binary()) -> Response::binary()
 * **stat**() -> [{{Host::string(), Port::integer()}, Response::binary()}]
+* **flush**() -> [{{Host::string(), Port::integer()}, Response::binary()}]
 * **flush**(Expiration::integer()) -> [{{Host::string(), Port::integer()}, Response::binary()}]
 * **quit**() -> [{{Host::string(), Port::integer()}, Response::binary()}]
 * **version**() -> [{{Host::string(), Port::integer()}, Response::binary()}]
