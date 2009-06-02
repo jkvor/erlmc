@@ -12,6 +12,37 @@ Text Protocol Spec <http://code.sixapart.com/svn/memcached/trunk/server/doc/prot
 
 Binary Protocol Spec <http://code.google.com/p/memcached/wiki/MemcacheBinaryProtocol>
 
+## Quick Start
+
+** **You must have the binary protocol branch of memcached running as mentioned above**
+
+$> make
+$> make test
+$> sudo make install
+
+1> mcerlang:start_link([{"localhost", 11211, 1}]).
+{ok,<0.37.0>}
+
+2> mcerlang:stats().
+[{{"localhost",11211},
+  [{evictions,"0"},
+   {total_items,"30"},
+   {curr_items,"4"},
+   {bytes,"257"},
+   {...}|...]}]
+
+3> mcerlang:set(hello, <<"World">>).
+<<>>
+
+4> mcerlang:get(hello).
+<<"World">>
+
+5> mcerlang:add("foo", <<"bar">>).
+<<>>
+
+6> mcerlang:get("foo").
+<<"bar">>
+
 ## Commands
 
 * **get**(Key::any()) -> Val::binary()
