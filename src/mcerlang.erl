@@ -50,7 +50,7 @@
 %%       Host = string()
 %%       Port = integer()
 %%       ConnectionPoolSize = integer()
-start_link(CacheServers) ->
+start_link(CacheServers) when is_list(CacheServers) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, CacheServers, []).
     
 get(Key) ->
