@@ -390,7 +390,10 @@ decode_response_body(Bin, ExtrasSize, KeySize, Resp) ->
 
 recv_bytes(_, 0) -> <<>>;
 recv_bytes(Socket, NumBytes) ->
-    {ok, Bin} = gen_tcp:recv(Socket, NumBytes), Bin.
+    case gen_tcp:recv(Socket, NumBytes) of
+        {ok, Bin} -> Bin;
+        {error, closed} -> exit({error, memcached_connection_closed})
+    end.
 
 package_key(Key) when is_atom(Key) ->
     atom_to_list(Key);
