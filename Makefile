@@ -2,16 +2,19 @@ LIBDIR=`erl -eval 'io:format("~s~n", [code:lib_dir()])' -s init stop -noshell`
 VERSION=0.1.0
 PKGNAME=mcerlang
 
-all:
+all: app
 	mkdir -p ebin/
 	(cd src;$(MAKE))
+
+app:
+	sh ebin/$(PKGNAME).app.in $(VERSION)
 
 test: all
 	prove t/*.t
 
 clean:
 	(cd src;$(MAKE) clean)
-	rm -rf erl_crash.dump *.beam *.hrl
+	rm -rf erl_crash.dump *.beam *.hrl ebin/*.app
 
 package: clean
 	@mkdir $(PKGNAME)-$(VERSION)/ && cp -rf ebin include Makefile README.markdown src support t $(PKGNAME)-$(VERSION)
