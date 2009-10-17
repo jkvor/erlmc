@@ -214,7 +214,11 @@ start_connection(Host, Port) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 add_server_to_continuum(Host, Port) ->
+<<<<<<< HEAD:src/mcerlang.erl
 	[ets:insert(mcerlang_continuum, {hash_to_uint(Host, Port), {Host, Port}}) || _ <- lists:seq(1, 100)].
+=======
+	ets:insert(mcerlang_continuum, {hash_to_uint(Host, Port), {Host, Port}}).
+>>>>>>> 412dce704d1ad98037abdb2adabd55b95ed88e32:src/mcerlang.erl
 
 remove_server_from_continuum(Host, Port) ->
 	ets:delete(mcerlang_continuum, hash_to_uint(Host, Port)).
