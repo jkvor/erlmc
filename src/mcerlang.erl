@@ -214,7 +214,7 @@ start_connection(Host, Port) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 add_server_to_continuum(Host, Port) ->
-	ets:insert(mcerlang_continuum, {hash_to_uint(Host, Port), {Host, Port}}).
+	[ets:insert(mcerlang_continuum, {hash_to_uint(Host, Port), {Host, Port}}) || _ <- lists:seq(1, 100)].
 
 remove_server_from_continuum(Host, Port) ->
 	ets:delete(mcerlang_continuum, hash_to_uint(Host, Port)).
@@ -245,7 +245,7 @@ unique_connections() ->
 %% represents the hashed server that the key maps to.
 %% reference: http://www8.org/w8-papers/2a-webserver/caching/paper2.html
 hash_to_uint(Host, Port) when is_list(Host), is_integer(Port) ->
-    hash_to_uint(Host ++ integer_to_list(Port)).
+    hash_to_uint(Host ++ integer_to_list(Port) ++ integer_to_list(random:uniform(65000))).
 
 hash_to_uint(Key) when is_list(Key) -> 
     <<Int:128/unsigned-integer>> = erlang:md5(Key), Int.
@@ -273,6 +273,7 @@ map_key(Key) when is_list(Key) ->
 			Pid
     end.
     
+%% @todo: use sorting algorithm to find next largest
 find_next_largest(_, '$end_of_table') -> 
 	undefined;
 
