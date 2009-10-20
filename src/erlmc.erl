@@ -24,7 +24,7 @@
 %%
 %% http://code.google.com/p/memcached/wiki/MemcacheBinaryProtocol
 %% @doc a binary protocol memcached client
--module(mcerlang).
+-module(erlmc).
 
 -export([start/0, start/1, start_link/0, start_link/1, init/2,
 		 add_server/3, remove_server/2, add_connection/2, remove_connection/2]).
@@ -35,7 +35,7 @@
 		 append/2, prepend/2, stats/0, flush/0, flush/1, quit/0, 
 		 version/0]).
 
--include("mcerlang.hrl").
+-include("erlmc.hrl").
 
 -define(TIMEOUT, 60000).
 
@@ -161,9 +161,9 @@ multi_call(Msg) ->
 %%--------------------------------------------------------------------	
 init(Parent, CacheServers) ->
 	process_flag(trap_exit, true),
-	register(mcerlang, self()),
-	ets:new(mcerlang_continuum, [ordered_set, protected, named_table]),
-	ets:new(mcerlang_connections, [bag, protected, named_table]),
+	register(erlmc, self()),
+	ets:new(erlmc_continuum, [ordered_set, protected, named_table]),
+	ets:new(erlmc_connections, [bag, protected, named_table]),
     
     %% Continuum = [{uint(), {Host, Port}}]
 	[add_server_to_continuum(Host, Port) || {Host, Port, _} <- CacheServers],
@@ -183,17 +183,17 @@ loop() ->
 			add_server_to_continuum(Host, Port),
 			[start_connection(Host, Port) || _ <- lists:seq(1, ConnPoolSize)];
 		{remove_server, Host, Port} ->
-			[(catch gen_server:call(Pid, quit, ?TIMEOUT)) || [Pid] <- ets:match(mcerlang_connections, {{Host, Port}, '$1'})],
+			[(catch gen_server:call(Pid, quit, ?TIMEOUT)) || [Pid] <- ets:match(erlmc_connections, {{Host, Port}, '$1'})],
 			remove_server_from_continuum(Host, Port);
 		{add_connection, Host, Port} ->
 			start_connection(Host, Port);
 		{remove_connection, Host, Port} ->
-			[[Pid]|_] = ets:match(mcerlang_connections, {{Host, Port}, '$1'}),
+			[[Pid]|_] = ets:match(erlmc_connections, {{Host, Port}, '$1'}),
 			(catch gen_server:call(Pid, quit, ?TIMEOUT));
 		{'EXIT', Pid, Err} ->
-			case ets:match(mcerlang_connections, {'$1', Pid}) of
+			case ets:match(erlmc_connections, {'$1', Pid}) of
 				[[{Host, Port}]] -> 
-					ets:delete_object(mcerlang_connections, {{Host, Port}, Pid}),
+					ets:delete_object(erlmc_connections, {{Host, Port}, Pid}),
 					case Err of
 						shutdown -> ok;
 						_ -> start_connection(Host, Port)
@@ -205,8 +205,8 @@ loop() ->
 	loop().
 	
 start_connection(Host, Port) ->
-	case mcerlang_conn:start_link([Host, Port]) of
-		{ok, Pid} -> ets:insert(mcerlang_connections, {{Host, Port}, Pid});
+	case erlmc_conn:start_link([Host, Port]) of
+		{ok, Pid} -> ets:insert(erlmc_connections, {{Host, Port}, Pid});
 		_ -> ok
 	end.
 
@@ -214,14 +214,14 @@ start_connection(Host, Port) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 add_server_to_continuum(Host, Port) ->
-	[ets:insert(mcerlang_continuum, {hash_to_uint(Host, Port), {Host, Port}}) || _ <- lists:seq(1, 100)].
+	[ets:insert(erlmc_continuum, {hash_to_uint(Host, Port), {Host, Port}}) || _ <- lists:seq(1, 100)].
 
 remove_server_from_continuum(Host, Port) ->
-	case ets:match(mcerlang_continuum, {'$1', {Host, Port}}) of
+	case ets:match(erlmc_continuum, {'$1', {Host, Port}}) of
 		[] -> 
 			ok;
 		List ->
-			[ets:delete(mcerlang_continuum, Key) || [Key] <- List]
+			[ets:delete(erlmc_continuum, Key) || [Key] <- List]
 	end.
 	
 package_key(Key) when is_atom(Key) ->
@@ -240,7 +240,7 @@ unique_connections() ->
 	dict:to_list(lists:foldl(
 		fun({Key, Val}, Dict) ->
 			dict:append_list(Key, [Val], Dict)
-		end, dict:new(), ets:tab2list(mcerlang_connections))).
+		end, dict:new(), ets:tab2list(erlmc_connections))).
 	
 %% Consistent hashing functions
 %%
@@ -259,19 +259,19 @@ hash_to_uint(Key) when is_list(Key) ->
 %%		 Key = string()
 %%		 Conn = pid()
 map_key(Key) when is_list(Key) ->
-	First = ets:first(mcerlang_continuum),
+	First = ets:first(erlmc_continuum),
     {Host, Port} = 
 		case find_next_largest(hash_to_uint(Key), First) of
 			undefined ->
 				case First of
-					'$end_of_table' -> exit(mcerlang_continuum_empty);
+					'$end_of_table' -> exit(erlmc_continuum_empty);
 					_ ->
-						[{_, Value}] = ets:lookup(mcerlang_continuum, First),
+						[{_, Value}] = ets:lookup(erlmc_continuum, First),
 						Value
 				end;
 			Value -> Value
 		end,
-	case ets:lookup(mcerlang_connections, {Host, Port}) of
+	case ets:lookup(erlmc_connections, {Host, Port}) of
 		[] -> exit({error, {connection_not_found, {Host, Port}}});
 		Pids ->
 			{_, Pid} = lists:nth(random:uniform(length(Pids)), Pids),
@@ -283,8 +283,8 @@ find_next_largest(_, '$end_of_table') ->
 	undefined;
 
 find_next_largest(Int, Key) when Key > Int ->
-	[{_, Val}] = ets:lookup(mcerlang_continuum, Key),
+	[{_, Val}] = ets:lookup(erlmc_continuum, Key),
 	Val;
 	
 find_next_largest(Int, Key) ->
-	find_next_largest(Int, ets:next(mcerlang_continuum, Key)).
+	find_next_largest(Int, ets:next(erlmc_continuum, Key)).

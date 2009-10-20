@@ -1,54 +1,41 @@
-# MC Erlang caches beats on your face
+## erlmc
 
 Erlang binary protocol memcached client
 
-## Dependencies
-
-Binary protocol build of memcached <http://github.com/dustin/memcached>
-
 ## External Documentation
-
-Text Protocol Spec <http://code.sixapart.com/svn/memcached/trunk/server/doc/protocol.txt>
 
 Binary Protocol Spec <http://code.google.com/p/memcached/wiki/MemcacheBinaryProtocol>
 
 ## Quick Start
 
-**You must have the binary protocol branch of memcached running as mentioned above**
+**You must have version 1.3 or greater of memcached**
 
 	$> make
 	$> make test
 	$> sudo make install
-	$> memcached -d -m 1024 -p 11211 -l localhost
-	$> memcached -d -m 1024 -p 11121 -l localhost
+	$> memcached -d
 
-	1> mcerlang:start_link([{"localhost", 11211, 1}, {"localhost", 11121, 1}]).
-	{ok,<0.37.0>}
+	1> erlmc:start().
+	ok
 
-	2> mcerlang:stats().
+	2> erlmc:stats().
 	[{{"localhost",11211},
-	  [{evictions,"0"},
-	   {total_items,"0"},
-	   {curr_items,"0"},
-	   {bytes,"0"},
-	   {...}|...]},
-	 {{"localhost",11121},
 	  [{evictions,"0"},
 	   {total_items,"0"},
 	   {curr_items,"0"},
 	   {bytes,"0"},
 	   {...}|...]}]
 
-	3> mcerlang:set(hello, <<"World">>).
+	3> erlmc:set(hello, <<"World">>).
 	<<>>
 
-	4> mcerlang:get(hello).
+	4> erlmc:get(hello).
 	<<"World">>
 
-	5> mcerlang:add("foo", <<"bar">>).
+	5> erlmc:add("foo", <<"bar">>).
 	<<>>
 
-	6> mcerlang:get("foo").
+	6> erlmc:get("foo").
 	<<"bar">>
 
 ## Commands

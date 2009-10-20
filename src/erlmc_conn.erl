@@ -24,10 +24,10 @@
 %%
 %% http://code.google.com/p/memcached/wiki/MemcacheBinaryProtocol
 %% @doc a binary protocol memcached client
--module(mcerlang_conn).
+-module(erlmc_conn).
 -behaviour(gen_server).
 
--include("mcerlang.hrl").
+-include("erlmc.hrl").
 
 %% gen_server callbacks
 -export([start_link/1, init/1, handle_call/3, handle_cast/2, 

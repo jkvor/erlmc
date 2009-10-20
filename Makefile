@@ -1,6 +1,6 @@
 LIBDIR=`erl -eval 'io:format("~s~n", [code:lib_dir()])' -s init stop -noshell`
 VERSION=0.2
-PKGNAME=mcerlang
+PKGNAME=erlmc
 
 all: app
 	mkdir -p ebin/
