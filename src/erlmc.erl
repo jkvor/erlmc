@@ -214,7 +214,7 @@ start_connection(Host, Port) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 add_server_to_continuum(Host, Port) ->
-	[ets:insert(erlmc_continuum, {hash_to_uint(Host, Port), {Host, Port}}) || _ <- lists:seq(1, 100)].
+	[ets:insert(erlmc_continuum, {hash_to_uint(Host ++ integer_to_list(Port) ++ integer_to_list(I)), {Host, Port}}) || I <- lists:seq(1, 100)].
 
 remove_server_from_continuum(Host, Port) ->
 	case ets:match(erlmc_continuum, {'$1', {Host, Port}}) of
@@ -249,9 +249,6 @@ unique_connections() ->
 %% and locate the next largest integer on the continuum. That integer
 %% represents the hashed server that the key maps to.
 %% reference: http://www8.org/w8-papers/2a-webserver/caching/paper2.html
-hash_to_uint(Host, Port) when is_list(Host), is_integer(Port) ->
-    hash_to_uint(Host ++ integer_to_list(Port) ++ integer_to_list(random:uniform(65000))).
-
 hash_to_uint(Key) when is_list(Key) -> 
     <<Int:128/unsigned-integer>> = erlang:md5(Key), Int.
 
