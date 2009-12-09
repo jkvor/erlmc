@@ -32,7 +32,7 @@
 %% api callbacks
 -export([get/1, get_many/1, add/2, add/3, set/2, set/3, 
 		 replace/2, replace/3, delete/1, increment/4, decrement/4,
-		 append/2, prepend/2, stats/0, flush/0, flush/1, quit/0, 
+		 append/2, prepend/2, stats/0, stats/2, flush/0, flush/1, quit/0, 
 		 version/0]).
 
 -include("erlmc.hrl").
@@ -133,7 +133,10 @@ prepend(Key0, Value) when is_binary(Value) ->
 
 stats() ->
 	multi_call(stats).
-	
+
+stats(Host, Port) ->
+    host_port_call(Host, Port, stats).
+
 flush() ->
     multi_call(flush).
     
@@ -155,6 +158,11 @@ multi_call(Msg) ->
 		Pid = lists:nth(random:uniform(length(Pids)), Pids),
 		{{Host, Port}, gen_server:call(Pid, Msg, ?TIMEOUT)}
 	end || {{Host, Port}, Pids} <- unique_connections()].
+
+host_port_call(Host, Port, Msg) ->
+    Pid = unique_connection(Host, Port),
+    gen_server:call(Pid, Msg, ?TIMEOUT).
+
 	
 %%--------------------------------------------------------------------
 %%% Stateful loop
@@ -241,7 +249,15 @@ unique_connections() ->
 		fun({Key, Val}, Dict) ->
 			dict:append_list(Key, [Val], Dict)
 		end, dict:new(), ets:tab2list(erlmc_connections))).
-	
+
+unique_connection(Host, Port) ->
+    case ets:lookup(erlmc_connections, {Host, Port}) of
+        [] -> exit({error, {connection_not_found, {Host, Port}}});
+        Pids ->
+            {_, Pid} = lists:nth(random:uniform(length(Pids)), Pids),
+            Pid
+    end.
+
 %% Consistent hashing functions
 %%
 %% First, hash memcached servers to unsigned integers on a continuum. To
@@ -268,12 +284,7 @@ map_key(Key) when is_list(Key) ->
 				end;
 			Value -> Value
 		end,
-	case ets:lookup(erlmc_connections, {Host, Port}) of
-		[] -> exit({error, {connection_not_found, {Host, Port}}});
-		Pids ->
-			{_, Pid} = lists:nth(random:uniform(length(Pids)), Pids),
-			Pid
-    end.
+	unique_connection(Host, Port).
     
 %% @todo: use sorting algorithm to find next largest
 find_next_largest(_, '$end_of_table') -> 
