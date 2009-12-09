@@ -27,7 +27,7 @@
 -module(erlmc).
 
 -export([start/0, start/1, start_link/0, start_link/1, init/2,
-		 add_server/3, remove_server/2, add_connection/2, remove_connection/2]).
+		 add_server/3, remove_server/2, refresh_server/3, add_connection/2, remove_connection/2]).
 
 %% api callbacks
 -export([get/1, get_many/1, add/2, add/3, set/2, set/3, 
@@ -59,6 +59,10 @@ add_server(Host, Port, PoolSize) ->
 	erlang:send(?MODULE, {add_server, Host, Port, PoolSize}),
 	ok.
 	
+refresh_server(Host, Port, PoolSize) ->
+    erlang:send(?MODULE, {refresh_server, Host, Port, PoolSize}),
+    ok.
+    
 remove_server(Host, Port) ->
 	erlang:send(?MODULE, {remove_server, Host, Port}),
 	ok.
@@ -189,7 +193,18 @@ loop() ->
 	receive
 		{add_server, Host, Port, ConnPoolSize} ->
 			add_server_to_continuum(Host, Port),
-			[start_connection(Host, Port) || _ <- lists:seq(1, ConnPoolSize)];
+            [start_connection(Host, Port) || _ <- lists:seq(1, ConnPoolSize)];
+        {refresh_server, Host, Port, ConnPoolSize} ->
+            % adding to continuum is idempotent
+            add_server_to_continuum(Host, Port),
+            % add only necessary connections to reach pool size
+            LiveConnections = revalidate_connections(Host, Port),
+            if
+                LiveConnections < ConnPoolSize ->
+                    [start_connection(Host, Port) || _ <- lists:seq(1, ConnPoolSize - LiveConnections)];
+                true ->
+                    ok
+            end;
 		{remove_server, Host, Port} ->
 			[(catch gen_server:call(Pid, quit, ?TIMEOUT)) || [Pid] <- ets:match(erlmc_connections, {{Host, Port}, '$1'})],
 			remove_server_from_continuum(Host, Port);
@@ -217,6 +232,10 @@ start_connection(Host, Port) ->
 		{ok, Pid} -> ets:insert(erlmc_connections, {{Host, Port}, Pid});
 		_ -> ok
 	end.
+
+revalidate_connections(Host, Port) ->
+    [(catch gen_server:call(Pid, version, ?TIMEOUT)) || [Pid] <- ets:match(erlmc_connections, {{Host, Port}, '$1'})],
+    length(ets:match(erlmc_connections, {{Host, Port}, '$1'})).
 
 %%--------------------------------------------------------------------
 %%% Internal functions
