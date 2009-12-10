@@ -27,7 +27,8 @@
 -module(erlmc).
 
 -export([start/0, start/1, start_link/0, start_link/1, init/2,
-		 add_server/3, remove_server/2, refresh_server/3, add_connection/2, remove_connection/2]).
+		 add_server/3, remove_server/2, refresh_server/3, has_server/2,
+         add_connection/2, remove_connection/2]).
 
 %% api callbacks
 -export([get/1, get_many/1, add/2, add/3, set/2, set/3, 
@@ -66,7 +67,16 @@ refresh_server(Host, Port, PoolSize) ->
 remove_server(Host, Port) ->
 	erlang:send(?MODULE, {remove_server, Host, Port}),
 	ok.
-	
+
+has_server(Host, Port) ->
+    erlang:send(?MODULE, {has_server, self(), Host, Port}),
+    
+    receive
+        {has_server_result, B} when is_boolean(B) -> B
+    after
+        5000 -> unknown
+    end.
+
 add_connection(Host, Port) ->
 	erlang:send(?MODULE, {add_connection, Host, Port}),
 	ok.
@@ -208,6 +218,8 @@ loop() ->
 		{remove_server, Host, Port} ->
 			[(catch gen_server:call(Pid, quit, ?TIMEOUT)) || [Pid] <- ets:match(erlmc_connections, {{Host, Port}, '$1'})],
 			remove_server_from_continuum(Host, Port);
+        {has_server, CallerPid, Host, Port} ->
+            CallerPid ! {has_server_result, is_server_in_continuum(Host, Port)};
 		{add_connection, Host, Port} ->
 			start_connection(Host, Port);
 		{remove_connection, Host, Port} ->
@@ -250,7 +262,15 @@ remove_server_from_continuum(Host, Port) ->
 		List ->
 			[ets:delete(erlmc_continuum, Key) || [Key] <- List]
 	end.
-	
+
+is_server_in_continuum(Host, Port) ->
+    case ets:match(erlmc_continuum, {'$1', {Host, Port}}) of
+        [] -> 
+            false;
+        _ ->
+            true
+    end.
+
 package_key(Key) when is_atom(Key) ->
     atom_to_list(Key);
 
