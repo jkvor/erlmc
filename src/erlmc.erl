@@ -87,7 +87,7 @@ remove_connection(Host, Port) ->
 	
 get(Key0) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {get, Key}, ?TIMEOUT).
+    call(map_key(Key), {get, Key}, ?TIMEOUT).
 
 get_many(Keys) ->
 	Self = self(),
@@ -109,41 +109,41 @@ add(Key, Value) ->
 	
 add(Key0, Value, Expiration) when is_binary(Value), is_integer(Expiration) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {add, Key, Value, Expiration}, ?TIMEOUT).
+    call(map_key(Key), {add, Key, Value, Expiration}, ?TIMEOUT).
 
 set(Key, Value) ->
 	set(Key, Value, 0).
 	
 set(Key0, Value, Expiration) when is_binary(Value), is_integer(Expiration) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {set, Key, Value, Expiration}, ?TIMEOUT).
+    call(map_key(Key), {set, Key, Value, Expiration}, ?TIMEOUT).
     
 replace(Key, Value) ->
 	replace(Key, Value, 0).
 	
 replace(Key0, Value, Expiration) when is_binary(Value), is_integer(Expiration) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {replace, Key, Value, Expiration}, ?TIMEOUT).
+    call(map_key(Key), {replace, Key, Value, Expiration}, ?TIMEOUT).
     
 delete(Key0) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {delete, Key}, ?TIMEOUT).
+    call(map_key(Key), {delete, Key}, ?TIMEOUT).
 
 increment(Key0, Value, Initial, Expiration) when is_binary(Value), is_binary(Initial), is_integer(Expiration) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {increment, Key, Value, Initial, Expiration}, ?TIMEOUT).
+    call(map_key(Key), {increment, Key, Value, Initial, Expiration}, ?TIMEOUT).
 
 decrement(Key0, Value, Initial, Expiration) when is_binary(Value), is_binary(Initial), is_integer(Expiration) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {decrement, Key, Value, Initial, Expiration}, ?TIMEOUT).
+    call(map_key(Key), {decrement, Key, Value, Initial, Expiration}, ?TIMEOUT).
 
 append(Key0, Value) when is_binary(Value) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {append, Key, Value}, ?TIMEOUT).
+    call(map_key(Key), {append, Key, Value}, ?TIMEOUT).
 
 prepend(Key0, Value) when is_binary(Value) ->
 	Key = package_key(Key0),
-    gen_server:call(map_key(Key), {prepend, Key, Value}, ?TIMEOUT).
+    call(map_key(Key), {prepend, Key, Value}, ?TIMEOUT).
 
 stats() ->
 	multi_call(stats).
@@ -177,6 +177,11 @@ host_port_call(Host, Port, Msg) ->
     Pid = unique_connection(Host, Port),
     gen_server:call(Pid, Msg, ?TIMEOUT).
 
+call(Pid, Msg, Timeout) ->
+	case gen_server:call(Pid, Msg, Timeout) of
+		{error, Error} -> exit({erlmc, Error});
+		Resp -> Resp
+	end.
 	
 %%--------------------------------------------------------------------
 %%% Stateful loop
@@ -291,7 +296,7 @@ unique_connections() ->
 
 unique_connection(Host, Port) ->
     case ets:lookup(erlmc_connections, {Host, Port}) of
-        [] -> exit({error, {connection_not_found, {Host, Port}}});
+        [] -> exit({erlmc, {connection_not_found, {Host, Port}}});
         Pids ->
             {_, Pid} = lists:nth(random:uniform(length(Pids)), Pids),
             Pid
