@@ -1,0 +1,15 @@
+%%-*- mode: erlang -*-
+{application, erlmc,
+ [
+  {description, "erlmc"},
+  {vsn, "1p"},
+  {modules, []},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  inets
+                 ]},
+  {mod, { erlmc, []}},
+  {env, []}
+ ]}.
